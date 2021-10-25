@@ -360,9 +360,9 @@ namespace AdbProfiler
             {
                 Open();
             }
-            if(Button("TakeSample"))
+            if(Button("TakeSnapShot"))
             {
-                MemoryTakeSample();
+                TakeSnapshot();
             }
             EditorGUILayout.EndHorizontal();
 
@@ -370,6 +370,11 @@ namespace AdbProfiler
             EditorGUILayout.LabelField(string.Format("Platform : {0}", platformName));
             packageName = EditorGUILayout.TextField("PackageName", string.Format("{0}", packageName));
             captureMode = (CaptureMode)EditorGUILayout.EnumPopup(captureMode);
+            if(Button("RestartGame"))
+            {
+                DoCmd("adb shell am force-stop " + packageName);
+                DoCmd(string.Format("adb shell monkey -p {0} -c android.intent.category.LAUNCHER 1", packageName));
+            }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.LabelField(string.Format("Max           : {0}", maxInfo.ToString()));
@@ -705,7 +710,7 @@ namespace AdbProfiler
                 frameCaptureCount = cacheFrameCount;
             }
         }
-        void MemoryTakeSample()
+        void TakeSnapshot()
         {
             var fullPath = textureFolder.FullName;
             var fileName = System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss")+ ".data";
