@@ -1,9 +1,9 @@
 {
     "name": "com.hbsi.dtd",
     "displayName": "AdbMemoryProfiler",
-    "version": "1.0",
+    "version": "0.1.0",
     "unity": "2019.4",
     "description": "This package provides profiler for unity games.",
     "keywords": ["Profiler", "Memory", "Adb"],
-    "category": "Controllers",
+    "category": "Controllers"
 }
