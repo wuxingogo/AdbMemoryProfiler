@@ -3,7 +3,7 @@
     "displayName": "AdbMemoryProfiler",
     "version": "1.0",
     "unity": "2019.4",
-    "description": "This package provides profiler for unity games \n\nTo find out more, click the \"View Documentation\" link.",
+    "description": "This package provides profiler for unity games.",
     "keywords": ["Profiler", "Memory", "Adb"],
     "category": "Controllers",
 }
