@@ -324,6 +324,10 @@ namespace AdbProfiler
             {
                 EndSample();
             }
+            if(Button("MemoryTakeSample"))
+            {
+                MemoryTakeSample();
+            }
             if(Button("Pause"))
             {
                 isRunning = !isRunning;
@@ -806,6 +810,14 @@ namespace AdbProfiler
 
             ProfilerDriver.enabled = false;
             
+        }
+        public void MemoryTakeSample()
+        {
+            MemoryProfiler.TakeTempSnapshot(OnTakeSnapshotFinish);
+        }
+        public void OnTakeSnapshotFinish(string info, bool result)
+        {
+            Log($"info : {info}, result : {result}");
         }
 
         void OnDisable()
