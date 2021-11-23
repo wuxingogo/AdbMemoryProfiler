@@ -15,6 +15,7 @@ namespace AdbProfiler
 
     public class AdbMemoryProfiler : EditorWindow
     {
+
         public enum CaptureMode
         {
             PerSecound,
@@ -64,6 +65,8 @@ namespace AdbProfiler
             }
         }
         private int cacheFrameCount = 5;
+
+        private ProfilerArea currentArea = ProfilerArea.Memory;
 
         public DirectoryInfo textureFolder
         {
@@ -116,6 +119,18 @@ namespace AdbProfiler
 
         public class FrameInfo
         {
+            public class ProfilerData
+            {
+                public bool isSizeOutput = false;
+            }
+            public static Dictionary<string, ProfilerData> PROFILER_SETTING = new Dictionary<string, ProfilerData>()
+            {
+                {"Total Allocated", new ProfilerData(){isSizeOutput = true}},
+                {"Texture Memory", new ProfilerData(){isSizeOutput = true}},
+                {"Mesh Memory", new ProfilerData(){isSizeOutput = true}},
+                {"Total GC Allocated", new ProfilerData(){isSizeOutput = true}},
+                {"GC Allocated", new ProfilerData(){isSizeOutput = true}},
+            };
             public int frameIndex;
             public float unknownSize;
             public float totalSize;
@@ -126,6 +141,7 @@ namespace AdbProfiler
             public float totalGCAllocated;
             public float gcAllocated;
             public float heap;
+            public Dictionary<string, long> frameInfo = new Dictionary<string, long>();
             public string monoStr{
                 set{
                     monoMemory = CaclulateMemory(value);
@@ -184,6 +200,30 @@ namespace AdbProfiler
                 string v6 = SizeToString(heap);
                 string v7 = SizeToString(monoMemory);
                 string v8 = SizeToString(gfxMemory);
+
+                string result = "";
+
+                foreach (var info in frameInfo)
+                {
+                    var key = info.Key;
+                    bool isSizeOutput = false;
+                    if (PROFILER_SETTING.ContainsKey(key))
+                    {
+                        isSizeOutput = PROFILER_SETTING[key].isSizeOutput;
+                    }
+
+                    if (isSizeOutput)
+                    {
+                        result += string.Format("{0}:{1},", info.Key, SizeToString(info.Value));
+                    }
+                    else
+                    {
+                        result += string.Format("{0}:{1},", info.Key, info.Value);
+                    }
+                }
+                // if(result.Length > 1)
+                // result = result.Substring(0, result.Length - 1);
+                return result;
                 return string.Format("Android PSS {5}, Unknow {6}, totalAllocated : {0}, textureMemory : {1}, meshMemory : {2}, totalGCAllocated : {3}, gcAllocated : {4}., heap : {7}, Mono: {8}, GfxDriver : {9}.", v1, v2, v3, v4, v5, vPSS, vUnknown, v6, v7, v8);
             }
             public string ToExcelString()
@@ -273,6 +313,11 @@ namespace AdbProfiler
                 newFrameInfo.gfxMemory = gfxMemory;
                 newFrameInfo.screenShotPath = screenShotPath;
                 return newFrameInfo;
+            }
+
+            public void RecordProperty(string propertyName, float f)
+            {
+                frameInfo[propertyName] = (long)f;
             }
         }
         public class AnalyticsInfo
@@ -374,6 +419,7 @@ namespace AdbProfiler
             EditorGUILayout.LabelField(string.Format("Platform : {0}", platformName));
             packageName = EditorGUILayout.TextField("PackageName", string.Format("{0}", packageName));
             captureMode = (CaptureMode)EditorGUILayout.EnumPopup(captureMode);
+            currentArea = (ProfilerArea)EditorGUILayout.EnumPopup(currentArea);
             if(Button("RestartGame"))
             {
                 DoCmd("adb shell am force-stop " + packageName);
@@ -679,11 +725,11 @@ namespace AdbProfiler
             lastCaptureFrameIndex = ProfilerDriver.lastFrameIndex;
 
             //Memory Area
-            var statistics = ProfilerDriver.GetGraphStatisticsPropertiesForArea(ProfilerArea.Memory);
+            var statistics = ProfilerDriver.GetGraphStatisticsPropertiesForArea(currentArea);
             
             foreach (var propertyName in statistics)
             {
-                var id = ProfilerDriver.GetStatisticsIdentifierForArea(ProfilerArea.Memory, propertyName);
+                var id = ProfilerDriver.GetStatisticsIdentifierForArea(currentArea, propertyName);
                 var buffer = new float[1];
                 ProfilerDriver.GetStatisticsValues(id, lastCaptureFrameIndex, 1, buffer, out var maxValue);
 
@@ -695,12 +741,14 @@ namespace AdbProfiler
                 //kb
                 else if (propertyName == "Total GC Allocated") frameInfo.totalGCAllocated = buffer[0];
                 else if (propertyName == "GC Allocated") frameInfo.gcAllocated = buffer[0];
+
+                frameInfo.RecordProperty(propertyName, buffer[0]);
             }
 
             var allProperty = ProfilerDriver.GetAllStatisticsProperties();
             var overview = ProfilerDriver.miniMemoryOverview;
             
-            var text = ProfilerDriver.GetOverviewText(ProfilerArea.Memory, lastCaptureFrameIndex);
+            var text = ProfilerDriver.GetOverviewText(currentArea, lastCaptureFrameIndex);
 
             frameInfo.heap = ProfilerDriver.usedHeapSize;
             var matchMono = "(?<=Mono:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
