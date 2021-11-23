@@ -449,7 +449,7 @@ namespace AdbProfiler
                 var totalFrame = TotalAnalyticsInfo[i];
                 if(GUILayout.Button(totalFrame.name, EditorStyles.miniButtonLeft, GUILayout.Width(85)))
                 {
-                    MemoryDetailWindow.InitWindow(totalFrame);
+                    // MemoryDetailWindow.InitWindow(totalFrame);
                 }
                 
             }
@@ -749,7 +749,8 @@ namespace AdbProfiler
             var overview = ProfilerDriver.miniMemoryOverview;
             
             var text = ProfilerDriver.GetOverviewText(currentArea, lastCaptureFrameIndex);
-
+            // ProfilerDriver.RequestObjectMemoryInfo(m_GatherObjectReferences);
+            
             frameInfo.heap = ProfilerDriver.usedHeapSize;
             var matchMono = "(?<=Mono:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
             var matchGfx = "(?<=GfxDriver:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
