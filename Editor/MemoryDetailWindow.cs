@@ -46,12 +46,12 @@ namespace AdbProfiler
             {
                 var frameInfo = totalFrameInfo[i];
 
-                androidPssCurve.AddKey(i, frameInfo.totalSize);
-                unknownCurve.AddKey(i, frameInfo.unknownSize);
-                totalAllocatedCurve.AddKey(i, frameInfo.totalAllocated);
-                textureMemoryCurve.AddKey(i, frameInfo.textureMemory);
-                meshMemoryCurve.AddKey(i, frameInfo.meshMemory);
-                monoCurve.AddKey(i, frameInfo.monoMemory);
+                androidPssCurve.AddKey(i, (float)frameInfo.PssSize);
+                unknownCurve.AddKey(i, (float)frameInfo.unknownSize);
+                totalAllocatedCurve.AddKey(i, (float)frameInfo.totalAllocated);
+                textureMemoryCurve.AddKey(i, (float)frameInfo.textureMemory);
+                meshMemoryCurve.AddKey(i, (float)frameInfo.meshMemory);
+                monoCurve.AddKey(i, (float)frameInfo.monoMemory);
             }
 
             
