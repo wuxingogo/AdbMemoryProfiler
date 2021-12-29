@@ -41,6 +41,15 @@ namespace AdbProfiler
         public CaptureMode captureMode = CaptureMode.PerSecound;
         private float lastUpdateTime = 0;
         public bool isRunning = false;
+        public static string AdbInstallPath
+        {
+            get{
+                return EditorPrefs.GetString("AdbMemoryProfiler_ADBPath", "");
+            }
+            set{
+                EditorPrefs.SetString("AdbMemoryProfiler_ADBPath", value);
+            }
+        }
         public static string packageName
         {
             get
@@ -456,11 +465,51 @@ namespace AdbProfiler
         public List<FrameInfo> totalFrameInfo = new List<FrameInfo>();
         public string subName = "NewLabel";
         Vector2 scrollPos;
+        void ReSetADBInstallPath(bool isReSet = false)
+        {
+            
+            
+            if(File.Exists(AdbInstallPath) && isReSet == false)
+            {
+                adbExist = true;
+                Log("adb install folder : " + AdbInstallPath + " was found");
+            }
+            else{
+                var folder = textureFolder.FullName;
+                var path = EditorUtility.OpenFilePanel("Select ADB Location", folder, ".exe");
+                if(File.Exists(path))
+                {
+                    adbExist = true;
+                    AdbInstallPath = path;
+                    Log("adb reset install folder : " + AdbInstallPath);
+                }else{
+                     adbExist = false;
+                     Log("adb install folder : " + AdbInstallPath + " was not found");
+                }
+            }
+           
+        }
+        bool adbExist = false;
+
+        void OnEnable()
+        {
+            ReSetADBInstallPath();
+        }
         private void OnGUI()
         {
             var maxInfo = GetMaxInfo();
             var averageInfo = GetAverageInfo();
+
             EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(string.Format("AdbInstallPath : {0}", AdbInstallPath));
+            if(Button("ReSet"))
+            {
+                ReSetADBInstallPath(true);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+           
             if (Button("StartSample"))
             {
                 BeginSample();
@@ -522,8 +571,8 @@ namespace AdbProfiler
             currentArea = (ProfilerArea)EditorGUILayout.EnumPopup(currentArea);
             if (Button("RestartGame"))
             {
-                DoCmd("adb shell am force-stop " + packageName);
-                DoCmd(string.Format("adb shell monkey -p {0} -c android.intent.category.LAUNCHER 1", packageName));
+                DoCmd($"{AdbInstallPath} shell am force-stop {packageName}");
+                DoCmd($"{AdbInstallPath} shell monkey -p {packageName} -c android.intent.category.LAUNCHER 1");
             }
             EditorGUILayout.EndHorizontal();
 
@@ -801,13 +850,13 @@ namespace AdbProfiler
 
         public void Capture()
         {
-            var output = DoCmd("adb shell dumpsys meminfo " + packageName);
-            //Log(output);
+            var output = DoCmd($"{AdbInstallPath} shell dumpsys meminfo {packageName}");
+            // Log(output);
             string[] allLines = output.Split('\n');
             outPut = GetOutPut(allLines, "Unknown", "TOTAL");
             foreach (var item in outPut)
             {
-                //Log(item.Key + " : " + item.Value);
+                // Log(item.Key + " : " + item.Value);
             }
 
             var frameInfo = new FrameInfo();
@@ -895,7 +944,7 @@ namespace AdbProfiler
             fileName = fileName.Replace("/", "_");
             info.screenShotPath = fileName;
 
-            var command = string.Format("adb shell screencap -p /sdcard/screen.png | adb pull /sdcard/screen.png {0}{1} | adb shell rm /sdcard/screen.png", textureFolder, fileName);
+            var command = string.Format($"{AdbInstallPath} shell screencap -p /sdcard/screen.png | {AdbInstallPath} pull /sdcard/screen.png {textureFolder}{fileName} | {AdbInstallPath} shell rm /sdcard/screen.png");
             DoCmd(command);
 
         }
@@ -955,7 +1004,7 @@ namespace AdbProfiler
             totalFrameInfo.Clear();
             isRunning = true;
 
-            DoCmd("adb forward tcp:34999 localabstract:Unity-" + packageName);
+            DoCmd($"{AdbInstallPath} forward tcp:34999 localabstract:Unity-{packageName}");
             ProfilerDriver.connectedProfiler = 1337;
             Log(ProfilerDriver.connectedProfiler.ToString());
             currentTime = 0;
