@@ -34,13 +34,15 @@ namespace AdbProfiler
         public static void Init(AdbMemoryProfiler window)
         {
             window.OnCreate();
+            DeviceWindow.InitDevice();
         }
         public const float CAPTURE_DELAY = 1.0f;
         public static int lastCaptureFrameIndex = -1;
         private float currentTime = 0;
-        public CaptureMode captureMode = CaptureMode.PerSecound;
+        public CaptureMode sampleMode = CaptureMode.PerSecound;
         private float lastUpdateTime = 0;
         public bool isRunning = false;
+        public string port = "34999";
         public static string AdbInstallPath
         {
             get{
@@ -153,6 +155,12 @@ namespace AdbProfiler
                 {"Gfx", new ProfilerData(){isSizeOutput = true}},
                 {"PSS", new ProfilerData(){isSizeOutput = true}},
                 {"Unknown", new ProfilerData(){isSizeOutput = true}},
+                {"Reserved", new ProfilerData(){isSizeOutput = true}},
+                {"GlMtrack", new ProfilerData(){isSizeOutput = true}},
+            };
+            public static Dictionary<string,bool> PROFILER_FILTER = new Dictionary<string, bool>() 
+            {
+                {"GC Allocated", true},
             };
             public int frameIndex;
             public double unknownSize
@@ -178,6 +186,18 @@ namespace AdbProfiler
                 {
                     _pss = value * 1024;
                     RecordProperty("PSS", _pss);
+                }
+            }
+            private double _glmtrack;
+            public double glmtrack
+            {
+                get{
+                    return _glmtrack;
+                }
+                set
+                {
+                    _glmtrack = value * 1024;
+                    RecordProperty("GlMtrack", _glmtrack);
                 }
             }
             private double _pss;
@@ -207,6 +227,15 @@ namespace AdbProfiler
                     RecordProperty("Gfx", gfxMemory);
                 }
             }
+            public string reservedTotal
+            {
+                set
+                {
+                    var reservedTotal = CaclulateMemory(value);
+                    RecordProperty("Reserved", reservedTotal);
+                }
+            }
+            
             public double gfxMemory;
 
             const string delimiter = ",";
@@ -262,6 +291,7 @@ namespace AdbProfiler
                         result += string.Format("{0}:{1},", info.Key, info.Value);
                     }
                 }
+                
                 // if(result.Length > 1)
                 // result = result.Substring(0, result.Length - 1);
                 return result;
@@ -291,7 +321,7 @@ namespace AdbProfiler
                 }
                 return result;
             }
-            public string FullExcelString()
+            public string FullExcelString(bool includeScreenShot)
             {
                 string result = "";
 
@@ -313,6 +343,10 @@ namespace AdbProfiler
                         result += string.Format("{0},", info.Value);
                     }
                 }
+                if(includeScreenShot && string.IsNullOrEmpty(screenShotPath) == false)
+                {
+                    result += screenShotPath;
+                }
                 return result;
             }
 
@@ -325,6 +359,7 @@ namespace AdbProfiler
                     var key = info.Key;
                     result += string.Format("{0}{1}", key, delimiter);
                 }
+                result += "ScreenShot";
                 result += newline;
                 return result;
             }
@@ -405,7 +440,13 @@ namespace AdbProfiler
 
             public void RecordProperty(string propertyName, double f)
             {
-                frameInfo[propertyName] = (long)f;
+                if(PROFILER_FILTER.ContainsKey(propertyName) && PROFILER_FILTER[propertyName] == true)
+                {
+
+                }else{
+                    frameInfo[propertyName] = (long)f;
+                }
+                
             }
 
             public void RecordProperty(string propertyName, string size)
@@ -426,8 +467,8 @@ namespace AdbProfiler
             {
                 var head = "";
                 head += name + delimiter;
-                head += averageFrameInfo.FullExcelString();
-                head += maxFrameInfo.FullExcelString();
+                head += averageFrameInfo.FullExcelString(false);
+                head += maxFrameInfo.FullExcelString(false);
                 head += newline;
                 return head;
             }
@@ -439,7 +480,7 @@ namespace AdbProfiler
                 {
                     var frameInfo = totalFrameInfo[i];
                     head += i + delimiter;
-                    head += frameInfo.FullExcelString();
+                    head += frameInfo.FullExcelString(true);
                     head += newline;
                 }
                 return head;
@@ -502,9 +543,15 @@ namespace AdbProfiler
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(string.Format("AdbInstallPath : {0}", AdbInstallPath));
-            if(Button("ReSet"))
+
+            
+            if(Button("ADB Path"))
             {
                 ReSetADBInstallPath(true);
+            }
+            if(Button("Device"))
+            {
+                DeviceWindow.ShowWindow();
             }
             EditorGUILayout.EndHorizontal();
 
@@ -533,7 +580,7 @@ namespace AdbProfiler
             }
             if (Button("Capture"))
             {
-                cacheFrameCount = 1;
+                TakeScreenShot();
             }
             if (Button("NewSubInfo"))
             {
@@ -566,13 +613,19 @@ namespace AdbProfiler
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(string.Format("Platform : {0}", platformName));
+            port = EditorGUILayout.TextField("Port", port);
             packageName = EditorGUILayout.TextField("PackageName", string.Format("{0}", packageName));
-            captureMode = (CaptureMode)EditorGUILayout.EnumPopup(captureMode);
+            sampleMode = (CaptureMode)EditorGUILayout.EnumPopup(sampleMode);
             currentArea = (ProfilerArea)EditorGUILayout.EnumPopup(currentArea);
             if (Button("RestartGame"))
             {
-                DoCmd($"{AdbInstallPath} shell am force-stop {packageName}");
-                DoCmd($"{AdbInstallPath} shell monkey -p {packageName} -c android.intent.category.LAUNCHER 1");
+                if(DeviceWindow.CurrentDevice == null)
+                {
+                    Log("connect device error...");
+                    return;
+                }
+                DoCmd($"{AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} shell am force-stop {packageName}");
+                DoCmd($"{AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} shell monkey -p {packageName} -c android.intent.category.LAUNCHER 1");
             }
             EditorGUILayout.EndHorizontal();
 
@@ -623,7 +676,7 @@ namespace AdbProfiler
 
                 // EditorGUILayout.LabelField(string.Format("unknownSize : {0:N1} Mb, PSS : {1:N1} Mb.", frame.unknownSize,frame.totalSize));
 
-                EditorGUILayout.LabelField(frame.FullToString(), EditorStyles.miniButtonLeft, GUILayout.Width(1350));
+                EditorGUILayout.TextField(frame.FullToString());
                 if (string.IsNullOrEmpty(frame.screenShotPath) == false)
                 {
                     if (Button("Texture"))
@@ -688,7 +741,8 @@ namespace AdbProfiler
                 head += totalFrame.ToDetailString();
             }
             var folder = textureFolder.FullName;
-            var path = EditorUtility.SaveFilePanel("Save Excel", folder, "FrameData.csv", "csv");
+            var fileName = DeviceWindow.CurrentDevice.name + "_" + System.DateTime.Now.ToString("yyyyMMddHHmmss") + ".csv";
+            var path = EditorUtility.SaveFilePanel("Save Excel", folder, fileName, "csv");
             if (path.Length != 0)
                 File.WriteAllText(path, head);
         }
@@ -823,22 +877,22 @@ namespace AdbProfiler
         {
             if (isRunning)
             {
-                if (captureMode == CaptureMode.PerSecound)
+                if (sampleMode == CaptureMode.PerSecound)
                 {
                     if (currentTime > CAPTURE_DELAY)
                     {
                         lastUpdateTime = Time.realtimeSinceStartup;
-                        Capture();
+                        SampleFrame();
                     }
 
                     currentTime = Time.realtimeSinceStartup - lastUpdateTime;
 
                 }
-                else if (captureMode == CaptureMode.PerFrame)
+                else if (sampleMode == CaptureMode.PerFrame)
                 {
                     if (lastCaptureFrameIndex != ProfilerDriver.lastFrameIndex)
                     {
-                        Capture();
+                        SampleFrame();
                     }
                 }
 
@@ -848,26 +902,33 @@ namespace AdbProfiler
             }
         }
 
-        public void Capture()
+        public void SampleFrame()
         {
-            var output = DoCmd($"{AdbInstallPath} shell dumpsys meminfo {packageName}");
+            if(DeviceWindow.CurrentDevice == null)
+            {
+                DeviceWindow.InitDevice();
+                return;
+            }    
+            var output = DoCmd($"{AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} shell dumpsys meminfo {packageName}");
             // Log(output);
             string[] allLines = output.Split('\n');
-            outPut = GetOutPut(allLines, "Unknown", "TOTAL");
-            foreach (var item in outPut)
-            {
-                // Log(item.Key + " : " + item.Value);
-            }
+            outPut = GetOutPut(allLines, "Unknown", "TOTAL", "GL");
+            // foreach (var item in outPut)
+            // {
+            //     Log(item.Key + " : " + item.Value);
+            // }
 
             var frameInfo = new FrameInfo();
 
-            if (outPut.ContainsKey("Unknown") && outPut.ContainsKey("TOTAL"))
+            if (outPut.ContainsKey("Unknown") && outPut.ContainsKey("TOTAL") && outPut.ContainsKey("GL"))
             {
 
                 var totalSize = int.Parse(outPut["TOTAL"]);
                 var unknownSize = int.Parse(outPut["Unknown"]);
+                var glMtrack = int.Parse(outPut["GL"]);
                 frameInfo.PssSize = totalSize;
                 frameInfo.unknownSize = unknownSize;
+                frameInfo.glmtrack = glMtrack;
                 frameInfo.frameIndex = totalFrameInfo.Count;
                 totalFrameInfo.Add(frameInfo);
             }
@@ -917,14 +978,17 @@ namespace AdbProfiler
             frameInfo.heap = ProfilerDriver.usedHeapSize;
             var matchMono = "(?<=Mono:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
             var matchGfx = "(?<=GfxDriver:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
+            var matchReversedTotal = "(?<=Reserved Total:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
+            
             frameInfo.monoStr = GetOverviewText(text, matchMono);
             frameInfo.gfxDriverStr = GetOverviewText(text, matchGfx);
+            frameInfo.reservedTotal = GetOverviewText(text, matchReversedTotal);
             SaveToFrameInfo(frameInfo, cacheFrameCount);
 
-            if (frameCaptureCount != cacheFrameCount)
-            {
-                frameCaptureCount = cacheFrameCount;
-            }
+            // if (frameCaptureCount != cacheFrameCount)
+            // {
+            //     cacheFrameCount = frameCaptureCount;
+            // }
         }
         void TakeSnapshot()
         {
@@ -934,21 +998,35 @@ namespace AdbProfiler
 
             UnityEngine.Profiling.Memory.Experimental.MemoryProfiler.TakeSnapshot(fullPath + fileName, null);
         }
+
+        public string TakeScreenShot()
+        {
+            var fileName = DeviceWindow.CurrentDevice.name + "_" + System.DateTime.Now.ToString("yyyyMMddHHmmss") + ".png";
+            fileName = fileName.Replace("/", "_");
+            
+
+            // var command = string.Format($"{AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} shell screencap -p /sdcard/screen.png | {AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} pull /sdcard/screen.png {textureFolder}{fileName} | {AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} shell rm /sdcard/screen.png");
+            var command1 = string.Format($"adb -s {DeviceWindow.CurrentDevice.name} shell screencap -p /sdcard/screen.png |adb -s {DeviceWindow.CurrentDevice.name} pull /sdcard/screen.png {textureFolder}{fileName} |adb -s {DeviceWindow.CurrentDevice.name} shell rm /sdcard/screen.png");
+             
+            DoCmd(command1); 
+            // DoCmd(command);
+            return fileName;
+        }
         public void SaveToFrameInfo(FrameInfo info, int frameCount)
         {
+            if(DeviceWindow.CurrentDevice == null)
+            {
+                DeviceWindow.InitDevice();
+                return;
+            }
+                
             if (frameCount <= 0 || info.frameIndex % frameCount != 0)
                 return;
 
-
-            var fileName = System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".png";
-            fileName = fileName.Replace("/", "_");
-            info.screenShotPath = fileName;
-
-            var command = string.Format($"{AdbInstallPath} shell screencap -p /sdcard/screen.png | {AdbInstallPath} pull /sdcard/screen.png {textureFolder}{fileName} | {AdbInstallPath} shell rm /sdcard/screen.png");
-            DoCmd(command);
+            info.screenShotPath = TakeScreenShot();
 
         }
-        public string DoCmd(string args)
+        public static string DoCmd(string args)
         {
 
             Process cmd = new Process();
@@ -964,7 +1042,7 @@ namespace AdbProfiler
             cmd.StandardInput.Close();
             cmd.WaitForExit();
             string output = cmd.StandardOutput.ReadToEnd();
-
+            //Log(args);
             return output;
         }
         public static Dictionary<string, string> outPut = new Dictionary<string, string>();
@@ -984,7 +1062,12 @@ namespace AdbProfiler
                     if (matches.Count > 1 && matches[0].Value == info)
                     {
                         if (outPut.ContainsKey(info) == false)
-                            outPut.Add(info, matches[1].Value);
+                        {
+                            //匹配数字
+                            var matches1 = Regex.Matches(s, "[0-9]\\d*");
+                            if(matches1.Count > 1)
+                                outPut.Add(info, matches1[0].Value);
+                        }    
                     }
                 }
             }
@@ -1001,11 +1084,19 @@ namespace AdbProfiler
         }
         public void BeginSample()
         {
+            if(DeviceWindow.CurrentDevice == null)
+            {
+                DeviceWindow.InitDevice();
+                return;
+            }
             totalFrameInfo.Clear();
             isRunning = true;
 
-            DoCmd($"{AdbInstallPath} forward tcp:34999 localabstract:Unity-{packageName}");
+            DoCmd($"{AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} forward tcp:{port} localabstract:Unity-{packageName}");
             ProfilerDriver.connectedProfiler = 1337;
+            // ProfilerDriver.directConnectionPort = "";
+            // ProfilerDriver.DirectIPConnect($"127.0.0.1:{port}");
+            
             Log(ProfilerDriver.connectedProfiler.ToString());
             currentTime = 0;
             lastUpdateTime = Time.realtimeSinceStartup;
@@ -1036,7 +1127,7 @@ namespace AdbProfiler
         {
             EndSample();
         }
-        public void Log(string context)
+        public static void Log(string context)
         {
             UnityEngine.Debug.Log(context);
         }
