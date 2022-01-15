@@ -13,7 +13,53 @@ using System;
 
 namespace AdbProfiler
 {
+    public class ProfilerAreaEnum
+    {
+        [Flags]
+        public enum ProfilerAreaTarget
+        {
+            None = 0,
+            CPU = 1,
+            GPU = 2,
+            Rendering = 4,
+            Memory = 8,
+            Audio = 16,
+            Video = 32,
+            Physics = 64,
+            Physics2D = 128,
+            NetworkMessages = 256,
+            NetworkOperations = 512,
+            UI = 1024,
+            UIDetails = 2048,
+            GlobalIllumination = 4096,
 
+        }
+        private ProfilerArea _sourceArea = ProfilerArea.Memory;
+        // private ProfilerArea sourceArea
+        // {
+        //     get{
+        //         return _sourceArea;
+        //     }set
+        //     {
+        //         if(value)
+        //     }
+        // }
+        public ProfilerAreaTarget _destArea = ProfilerAreaTarget.Memory;
+        public ProfilerAreaTarget destArea
+        {
+            get{
+                return _destArea;
+            }
+            set
+            {
+                _destArea = value;
+            }
+        }
+        // public static Dictionary<ProfilerArea,ProfilerAreaTarget> Dict = new Dictionary<ProfilerArea,ProfilerAreaTarget>()
+        // {
+        //     {ProfilerArea.CPU, ProfilerAreaTarget.CPU},
+        // }
+    }
 
     public class AdbMemoryProfiler : EditorWindow
     {
@@ -198,6 +244,19 @@ namespace AdbProfiler
                 {
                     _glmtrack = value * 1024;
                     RecordProperty("GlMtrack", _glmtrack);
+                }
+            }
+
+            private double _temperature;
+            public double temperature
+            {
+                get{
+                    return _temperature;
+                }
+                set
+                {
+                    _temperature = value;
+                    RecordProperty("temperature", _temperature);
                 }
             }
             private double _pss;
@@ -552,6 +611,10 @@ namespace AdbProfiler
             if(Button("Device"))
             {
                 DeviceWindow.ShowWindow();
+            }
+            if(Button("Setting"))
+            {
+                SettingWindow.ShowWindow();
             }
             EditorGUILayout.EndHorizontal();
 
@@ -913,6 +976,8 @@ namespace AdbProfiler
             // Log(output);
             string[] allLines = output.Split('\n');
             outPut = GetOutPut(allLines, "Unknown", "TOTAL", "GL");
+
+            
             // foreach (var item in outPut)
             // {
             //     Log(item.Key + " : " + item.Value);
@@ -928,11 +993,25 @@ namespace AdbProfiler
                 var glMtrack = int.Parse(outPut["GL"]);
                 frameInfo.PssSize = totalSize;
                 frameInfo.unknownSize = unknownSize;
-                frameInfo.glmtrack = glMtrack;
+                if(SettingWindow.CaptureGLMtrack)
+                    frameInfo.glmtrack = glMtrack;
                 frameInfo.frameIndex = totalFrameInfo.Count;
                 totalFrameInfo.Add(frameInfo);
             }
 
+            if(SettingWindow.CaptureTemperature)
+            {
+                output = DoCmd($"{AdbInstallPath} -s {DeviceWindow.CurrentDevice.name} shell dumpsys battery");
+                allLines = output.Split('\n');
+                outPut = GetOutPut(allLines, "temperature");
+                if(outPut.ContainsKey("temperature"))
+                {
+                    var temperature = int.Parse(outPut["temperature"]);
+                    frameInfo.temperature = temperature;
+                }
+            }
+            
+            
             // using (var frameData = ProfilerDriver.GetHierarchyFrameDataView(0, 0, HierarchyFrameDataView.ViewModes.Default, HierarchyFrameDataView.columnGcMemory, false))
             // {
             //     int rootId = frameData.GetRootItemID();
@@ -940,6 +1019,7 @@ namespace AdbProfiler
             //     UnityEngine.Debug.Log("rootID : " + rootId + ", fps : " + fps);
             // }
 
+           
             string targetName = ProfilerDriver.GetConnectionIdentifier(ProfilerDriver.connectedProfiler);
             platformName = targetName;
 
@@ -959,12 +1039,12 @@ namespace AdbProfiler
 
                 //UnityEngine.Debug.Log("propertyName : " + propertyName + ", size : " + buffer[0]);
                 //mb
-                if (propertyName == "Total Allocated") frameInfo.totalAllocated = buffer[0];
-                else if (propertyName == "Texture Memory") frameInfo.textureMemory = buffer[0];
-                else if (propertyName == "Mesh Memory") frameInfo.meshMemory = buffer[0];
-                //kb
-                else if (propertyName == "Total GC Allocated") frameInfo.totalGCAllocated = buffer[0];
-                else if (propertyName == "GC Allocated") frameInfo.gcAllocated = buffer[0];
+                // if (propertyName == "Total Allocated") frameInfo.totalAllocated = buffer[0];
+                // else if (propertyName == "Texture Memory") frameInfo.textureMemory = buffer[0];
+                // else if (propertyName == "Mesh Memory") frameInfo.meshMemory = buffer[0];
+                // //kb
+                // else if (propertyName == "Total GC Allocated") frameInfo.totalGCAllocated = buffer[0];
+                // else if (propertyName == "GC Allocated") frameInfo.gcAllocated = buffer[0];
 
                 frameInfo.RecordProperty(propertyName, buffer[0]);
             }
@@ -975,15 +1055,56 @@ namespace AdbProfiler
             var text = ProfilerDriver.GetOverviewText(currentArea, lastCaptureFrameIndex);
             // ProfilerDriver.RequestObjectMemoryInfo(m_GatherObjectReferences);
 
-            frameInfo.heap = ProfilerDriver.usedHeapSize;
-            var matchMono = "(?<=Mono:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
-            var matchGfx = "(?<=GfxDriver:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
-            var matchReversedTotal = "(?<=Reserved Total:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
+            if(SettingWindow.CaptureCodeAnalytics)
+            {
+                List<int> parentsCacheList = new List<int>();
+                List<int> childrenCacheList = new List<int>();
+                using (var frameData = ProfilerDriver.GetHierarchyFrameDataView(lastCaptureFrameIndex, 0, HierarchyFrameDataView.ViewModes.Default, HierarchyFrameDataView.columnGcMemory, false))
+                {
+                    int rootId = frameData.GetRootItemID();
+                    frameData.GetItemDescendantsThatHaveChildren(rootId, parentsCacheList);
+                    float totalTimeMs = frameData.frameTimeMs;
+                    foreach (int parentId in parentsCacheList)
+                    {
+                        frameData.GetItemChildren(parentId, childrenCacheList);
+                        string name = frameData.GetItemName(parentId);
+                        string timePercent = frameData.GetItemColumnData(parentId, HierarchyFrameDataView.columnTotalPercent);
+                        string timeMs = frameData.GetItemColumnData(parentId, HierarchyFrameDataView.columnTotalTime);
+                        string gcData = frameData.GetItemColumnData(parentId, HierarchyFrameDataView.columnGcMemory);
+                        double gcValue = frameData.GetItemColumnDataAsDouble(parentId, HierarchyFrameDataView.columnGcMemory);
+                        foreach (var child in childrenCacheList)
+                        {
+                            name = frameData.GetItemName(child);
+                            timePercent = frameData.GetItemColumnData(child, HierarchyFrameDataView.columnTotalPercent);
+                            timeMs = frameData.GetItemColumnData(child, HierarchyFrameDataView.columnTotalTime);
+                            gcData = frameData.GetItemColumnData(child, HierarchyFrameDataView.columnGcMemory);
+                            gcValue = frameData.GetItemColumnDataAsDouble(child, HierarchyFrameDataView.columnGcMemory);
+                            
+                            if(gcValue > SettingWindow.GcRecordMinValue)
+                            {
+                                frameInfo.RecordProperty(name, gcValue);
+                            }
+                        }
+                        
+                    }
+                    
+                }
+            }
             
-            frameInfo.monoStr = GetOverviewText(text, matchMono);
-            frameInfo.gfxDriverStr = GetOverviewText(text, matchGfx);
-            frameInfo.reservedTotal = GetOverviewText(text, matchReversedTotal);
-            SaveToFrameInfo(frameInfo, cacheFrameCount);
+            frameInfo.heap = ProfilerDriver.usedHeapSize;
+
+            if(SettingWindow.CaptureMemoryOverview && currentArea == ProfilerArea.Memory)
+            {
+                var matchMono = "(?<=Mono:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
+                var matchGfx = "(?<=GfxDriver:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
+                var matchReversedTotal = "(?<=Reserved Total:\\s)([0-9]*.[0-9]*\\s(MB|GB))(?=\\s\\s\\s)";
+                
+                frameInfo.monoStr = GetOverviewText(text, matchMono);
+                frameInfo.gfxDriverStr = GetOverviewText(text, matchGfx);
+                frameInfo.reservedTotal = GetOverviewText(text, matchReversedTotal);
+                SaveToFrameInfo(frameInfo, cacheFrameCount);
+            }
+            
 
             // if (frameCaptureCount != cacheFrameCount)
             // {
@@ -992,11 +1113,13 @@ namespace AdbProfiler
         }
         void TakeSnapshot()
         {
-            var fullPath = textureFolder.FullName;
-            var fileName = System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".data";
-            fileName = fileName.Replace("/", "_");
+            // var fullPath = textureFolder.FullName;
+            // var fileName = System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss") + ".data";
+            // fileName = fileName.Replace("/", "_");
 
-            UnityEngine.Profiling.Memory.Experimental.MemoryProfiler.TakeSnapshot(fullPath + fileName, null);
+            // UnityEngine.Profiling.Memory.Experimental.MemoryProfiler.TakeSnapshot(fullPath + fileName, null);
+
+            
         }
 
         public string TakeScreenShot()
@@ -1065,7 +1188,7 @@ namespace AdbProfiler
                         {
                             //匹配数字
                             var matches1 = Regex.Matches(s, "[0-9]\\d*");
-                            if(matches1.Count > 1)
+                            if(matches1.Count > 0)
                                 outPut.Add(info, matches1[0].Value);
                         }    
                     }

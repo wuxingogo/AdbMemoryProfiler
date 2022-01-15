@@ -94,5 +94,10 @@ namespace AdbProfiler
             }
             EditorGUILayout.EndHorizontal();
         }
+
+        void OnLostFocus()
+        {
+            Close();
+        }
     }
 }
