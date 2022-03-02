@@ -20,7 +20,18 @@ namespace AdbProfiler
         public class Device
         {
             public string name;
+            public string Name
+            {
+                get{
+                    return remark;
+                }
+                set{
+                    name = value;
+                    remark = EditorPrefs.GetString(name, name);
+                }
+            }
             public string descrption;
+            public string remark;
         }
         public static Device CurrentDevice = null;
         public static List<Device> AllDevice = new List<Device>();
@@ -43,13 +54,13 @@ namespace AdbProfiler
                     if(string.IsNullOrEmpty(name) == false)
                     {
                         var newDevice = new Device();
-                        newDevice.name = name;
+                        newDevice.Name = name;
                         newDevice.descrption = desc;
                         AllDevice.Add(newDevice);
                         if(CurrentDevice == null)
                         {
                             CurrentDevice = newDevice;
-                            Debug.Log($"Connect Device:{newDevice.name}");
+                            GetWindow<AdbMemoryProfiler>().ShowNotification(new GUIContent($"Connect Device:{newDevice.name}"));
                         }
                     }
                 }
@@ -74,25 +85,27 @@ namespace AdbProfiler
             }
 
             if(CurrentDevice != null)
-                EditorGUILayout.LabelField("Current", CurrentDevice.name);
+                EditorGUILayout.LabelField("Current", CurrentDevice.Name);
 
             EditorGUILayout.EndHorizontal();
 
             
 
-            EditorGUILayout.BeginHorizontal();
+            //EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Select Device");
             for (int i = 0; i < AllDevice.Count; i++)
             {
                 var device = AllDevice[i];
-
+                EditorGUILayout.BeginHorizontal();
                 if(GUILayout.Button(device.descrption))
                 {
                     CurrentDevice = device;
-                    Debug.Log($"Connect Device:{device.name}");
+                    GetWindow<AdbMemoryProfiler>().ShowNotification(new GUIContent($"Connect Device:{device.Name}"));
                 }
+                device.Name = EditorGUILayout.TextField("DeviceName", device.Name);
+                EditorGUILayout.EndHorizontal();
             }
-            EditorGUILayout.EndHorizontal();
+            //EditorGUILayout.EndHorizontal();
         }
 
         void OnLostFocus()
